@@ -82,6 +82,100 @@ def generate_main_layer(gray: Image.Image, color: tuple) -> Image.Image:
     return Image.fromarray(out)
 
 
+def generate_rainbow_layer(gray: Image.Image, rainbow_colors: list) -> Image.Image:
+    """
+    Generate rainbow gradient layer by applying color gradient based on horizontal position.
+    
+    Creates a rainbow effect that transitions through multiple colors based on
+    the horizontal position in the image.
+    
+    Args:
+        gray: Grayscale PIL Image (mode "L")
+        rainbow_colors: List of RGB tuples for rainbow gradient
+        
+    Returns:
+        Rainbow colorized PIL Image (mode "RGB")
+    """
+    g = np.array(gray)
+    h, w = g.shape
+    out = np.zeros((h, w, 3), dtype=np.uint8)
+    
+    # Create gradient based on horizontal position
+    num_colors = len(rainbow_colors)
+    
+    for x in range(w):
+        # Calculate which color segment we're in
+        pos = x / w  # 0.0 to 1.0
+        segment = pos * (num_colors - 1)
+        idx = int(segment)
+        t = segment - idx  # Interpolation factor (0.0 to 1.0)
+        
+        # Handle edge case
+        if idx >= num_colors - 1:
+            idx = num_colors - 2
+            t = 1.0
+        
+        # Interpolate between two colors
+        c1 = np.array(rainbow_colors[idx])
+        c2 = np.array(rainbow_colors[idx + 1])
+        color = (c1 * (1 - t) + c2 * t).astype(np.uint8)
+        
+        # Apply color to grayscale values (preserving luminance)
+        for y in range(h):
+            luminance = g[y, x] / 255.0
+            out[y, x] = (color * luminance).astype(np.uint8)
+    
+    return Image.fromarray(out)
+
+
+def generate_holo_layer(gray: Image.Image, base_color: tuple) -> Image.Image:
+    """
+    Generate holographic layer with iridescent effect.
+    
+    Creates a holo effect by adding color shifts and gradient variations
+    to simulate holographic/iridescent appearance.
+    
+    Args:
+        gray: Grayscale PIL Image (mode "L")
+        base_color: Base RGB color tuple
+        
+    Returns:
+        Holographic colorized PIL Image (mode "RGB")
+    """
+    g = np.array(gray)
+    h, w = g.shape
+    out = np.zeros((h, w, 3), dtype=np.uint8)
+    
+    # Create holo effect with diagonal gradient and color shifting
+    for y in range(h):
+        for x in range(w):
+            # Create diagonal gradient for holo effect
+            diag = (x + y) / (w + h)
+            luminance = g[y, x] / 255.0
+            
+            # Shift colors based on diagonal position (rainbow-like effect)
+            angle = diag * 6.28318  # 0 to 2*PI
+            
+            # Calculate color shift (sine waves for RGB)
+            r_shift = np.sin(angle) * 60 + base_color[0]
+            g_shift = np.sin(angle + 2.094) * 60 + base_color[1]  # +120 degrees
+            b_shift = np.sin(angle + 4.189) * 60 + base_color[2]  # +240 degrees
+            
+            # Blend with base color
+            # NOTE: Use g_val instead of g to avoid overwriting the grayscale array 'g'
+            r = int((r_shift * 0.7 + base_color[0] * 0.3) * luminance)
+            g_val = int((g_shift * 0.7 + base_color[1] * 0.3) * luminance)
+            b = int((b_shift * 0.7 + base_color[2] * 0.3) * luminance)
+            
+            out[y, x] = [
+                max(0, min(255, r)),
+                max(0, min(255, g_val)),
+                max(0, min(255, b))
+            ]
+    
+    return Image.fromarray(out)
+
+
 def generate_mask(gray: Image.Image, threshold: int) -> Image.Image:
     """
     Generate binary mask layer based on grayscale threshold.
@@ -111,15 +205,25 @@ def generate_spot_uv(gray: Image.Image, edge_size: int) -> Image.Image:
     Args:
         gray: Grayscale PIL Image (mode "L")
         edge_size: Size of edge filter (affects line thickness)
+                   Must be odd number >= 3 (will be adjusted if invalid)
         
     Returns:
         Binary mask PIL Image (mode "L") for spot UV printing
     """
+    # Ensure filter size is valid (odd number >= 3)
+    # MaxFilter requires odd size >= 3
+    if edge_size < 3:
+        filter_size = 3
+    elif edge_size % 2 == 0:  # If even, make it odd
+        filter_size = edge_size + 1
+    else:
+        filter_size = edge_size
+    
     # Detect edges
     edges = gray.filter(ImageFilter.FIND_EDGES)
     
     # Dilate edges to make them thicker/printable
-    edges = edges.filter(ImageFilter.MaxFilter(edge_size))
+    edges = edges.filter(ImageFilter.MaxFilter(filter_size))
     
     # Convert to binary mask
     g = np.array(edges)

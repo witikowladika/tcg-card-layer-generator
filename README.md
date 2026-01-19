@@ -6,13 +6,15 @@ A professional Python tool to generate print-ready layers for trading cards from
 
 - **Exact Aspect Ratio Preservation** - Maintains precise 63×88 mm card dimensions
 - **Parametric Recoloring** - Apply any theme color while preserving luminance details
+- **Batch Processing** - Generate all color themes at once with a single command
+- **Card Variants** - Support for Normal, Shiny, Holo, and Rainbow variants
 - **Print-Ready Layer Separation**:
   - Main color layer (CMYK-ready artwork)
   - White ink layer (underprinting mask)
   - Foil layer (hot foil stamping mask)
   - Spot UV / emboss layer (glossy finish mask)
 - **Visual Preview Generation** - 2×2 grid showing all layers side-by-side
-- **Pokémon-Style Color Themes** - Pre-configured color palettes for all types
+- **Pokémon-Style Color Themes** - Pre-configured color palettes for all 11 types
 
 ## 📋 Requirements
 
@@ -42,24 +44,14 @@ pip install -r requirements.txt
    - Higher resolution is better (recommended: 2000+ pixels wide)
 
 2. Run the generator:
-```bash
-python src/main.py
-```
 
-This will generate layers using the default "grass" theme.
+## 📋 Two Generators Available
 
-### Using Different Color Themes
+### 1. Backside Generator (`src/backside_generator.py`)
+For generating card backsides with full variant support (normal, shiny, holo, rainbow).
 
-Specify a theme as a command-line argument:
-
-```bash
-python src/main.py fire
-python src/main.py water
-python src/main.py lightning
-```
-
-Available themes:
-- `grass` - Green (default)
+**Available Themes:**
+- `grass` - Green
 - `fire` - Red
 - `water` - Blue
 - `lightning` - Yellow
@@ -71,10 +63,85 @@ Available themes:
 - `fairy` - Pink
 - `colorless` - Light gray
 
+**Variants:**
+- **Normal**: Standard colors (default)
+- **Shiny**: Brighter, more saturated versions of base colors
+- **Holo**: Holographic/iridescent effect with color shifting
+- **Rainbow**: Gradient through all type colors (red → yellow → green → blue → purple → pink)
+- **All**: Generates normal, shiny, holo, and rainbow variants (default)
+
+**Usage Examples:**
+```bash
+# Generate all themes with all variants (default)
+python src/backside_generator.py
+python src/backside_generator.py all
+
+# Generate a specific theme (all variants)
+python src/backside_generator.py grass
+python src/backside_generator.py fire
+
+# Generate specific variant only
+python src/backside_generator.py fire shiny          # Shiny variant only
+python src/backside_generator.py fire holo           # Holographic variant only
+python src/backside_generator.py fire rainbow        # Rainbow variant (theme-agnostic)
+python src/backside_generator.py rainbow             # Rainbow variant for all themes
+
+# Generate from custom backside image
+python src/backside_generator.py fire input/my_backside.png
+```
+
+### 2. Front Generator (`src/front_generator.py`)
+**Automatic detection** of variant and type from card images. Analyzes the card to detect:
+- **Variant**: shiny, holo, rainbow, or normal (detected from border patterns)
+- **Type**: grass, fire, water, etc. (detected from dominant inner color)
+
+**Automatic detection (recommended):**
+```bash
+# Auto-detect from input/card_front.png
+python src/front_generator.py
+
+# Auto-detect from custom image
+python src/front_generator.py input/my_card_front.png
+```
+
+**Manual overrides:**
+```bash
+# Override type detection only
+python src/front_generator.py input/my_card_front.png fire
+
+# Override both type and variant
+python src/front_generator.py input/my_card_front.png fire shiny
+```
+
+**How detection works:**
+- **Variant detection**: Analyzes border edges (5-6% of image) for:
+  - Rainbow: Extreme color variance with many unique colors
+  - Holo: High color variance (rainbow shimmer effect)
+  - Shiny: High saturation and brightness contrast (distinct patterns)
+  - Normal: Consistent colors (default)
+  
+- **Type detection**: Analyzes inner region (excluding 10% border) for dominant color, matches to closest Pokémon type
+
+**Note:** Place your card front at `input/card_front.png` for automatic processing.
+
+### Quick Reference
+
+**Backside Generator - Batch processing:**
+- Generates all themes with all variants by default
+- Supports custom input images
+- Creates organized output structure with theme/variant folders
+
+**Front Generator - Automatic detection:**
+- Automatically detects variant (shiny/holo/rainbow/normal) from border patterns
+- Automatically detects type (grass/fire/water/etc.) from dominant color
+- Supports manual overrides if detection is incorrect
+- Ideal for processing individual card fronts with correct variant matching
+
 ### Output Structure
 
 After running, you'll find:
 
+**Single theme mode:**
 ```
 output/
 ├── layers/
@@ -85,6 +152,31 @@ output/
 │
 └── preview/
     └── layer_preview.png   # Visual control (2×2 grid)
+```
+
+**Batch mode (all themes, all variants):**
+```
+output/
+├── layers/
+│   ├── grass/
+│   │   ├── main_color.png
+│   │   ├── white_layer.png
+│   │   ├── foil_layer.png
+│   │   └── spot_uv_layer.png
+│   ├── grass_shiny/
+│   │   └── ... (shiny variant)
+│   ├── grass_holo/
+│   │   └── ... (holo variant)
+│   ├── fire/
+│   │   └── ...
+│   ├── fire_shiny/
+│   │   └── ...
+│   ├── rainbow/
+│   │   └── ... (rainbow gradient)
+│   └── ... (all themes and variants)
+│
+└── preview/
+    └── ... (preview for each variant)
 ```
 
 ## ⚙️ Configuration
@@ -109,7 +201,7 @@ POKEMON_COLORS = {
 
 Then use it:
 ```bash
-python src/main.py custom_theme
+python src/backside_generator.py custom_theme
 ```
 
 ## 🖨️ Print Notes
@@ -125,7 +217,8 @@ python src/main.py custom_theme
 tcg-card-layer-generator/
 │
 ├── input/
-│   └── card_base.png          # Your base artwork (place here)
+│   ├── card_base.png          # Base artwork for backsides (place here)
+│   └── card_front.png         # Card front for automatic detection (place here)
 │
 ├── output/                    # Generated files (gitignored)
 │   ├── layers/                # Print-ready layers
@@ -135,7 +228,9 @@ tcg-card-layer-generator/
 │   ├── config.py              # All configuration parameters
 │   ├── colors.py              # Color theme definitions
 │   ├── layers.py              # Core layer generation logic
-│   └── main.py                # Entry point
+│   ├── detection.py           # Automatic variant and type detection
+│   ├── backside_generator.py  # Backside generator (with variants)
+│   └── front_generator.py     # Front generator (automatic detection)
 │
 ├── requirements.txt           # Python dependencies
 ├── README.md                  # This file
