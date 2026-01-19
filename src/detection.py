@@ -103,6 +103,9 @@ def detect_type(img: Image.Image) -> str:
     Crops out edges and analyzes the center region to find the dominant
     color, then matches it to the closest Pokémon type color.
     
+    Uses HSV color space for better perceptual matching, especially to
+    distinguish water (blue) from metal (gray).
+    
     Args:
         img: RGB PIL Image
         
@@ -120,17 +123,62 @@ def detect_type(img: Image.Image) -> str:
     avg_color = np.mean(inner.reshape(-1, 3), axis=0).astype(int)
     avg_r, avg_g, avg_b = avg_color
     
+    # Convert average color to HSV for better perceptual matching
+    from colorsys import rgb_to_hsv
+    avg_h, avg_s, avg_v = rgb_to_hsv(avg_r / 255.0, avg_g / 255.0, avg_b / 255.0)
+    
+    # Special handling: If image has blue hue and some saturation, strongly prefer water over metal
+    # Blue hue range: approximately 0.5 to 0.7 in HSV (240° to 180° in degrees, but normalized 0-1)
+    is_blue_hue = (avg_h >= 0.45 and avg_h <= 0.75) and avg_s > 0.15
+    
     # Find closest matching Pokémon type color
     min_distance = float('inf')
     best_match = "grass"  # Default
     
     for type_name, type_color in POKEMON_COLORS.items():
-        # Calculate color distance (Euclidean in RGB space)
-        distance = np.sqrt(
-            (avg_r - type_color[0]) ** 2 +
-            (avg_g - type_color[1]) ** 2 +
-            (avg_b - type_color[2]) ** 2
+        # Convert type color to HSV
+        type_h, type_s, type_v = rgb_to_hsv(
+            type_color[0] / 255.0,
+            type_color[1] / 255.0,
+            type_color[2] / 255.0
         )
+        
+        # Special case: If we detect blue hue, heavily penalize metal
+        if is_blue_hue and type_name == "metal":
+            # Add large penalty to metal when we have a blue-ish image
+            distance = float('inf')
+        elif not is_blue_hue and type_name == "water" and avg_s < 0.1:
+            # If image is very desaturated (gray), penalize water slightly
+            distance = float('inf')
+        else:
+            # Calculate distance in HSV space with weighted components
+            # Hue is most important for distinguishing colors (e.g., blue vs gray)
+            # Use circular distance for hue (0 and 1 are close)
+            hue_diff = abs(avg_h - type_h)
+            hue_distance = min(hue_diff, 1.0 - hue_diff)  # Circular distance
+            
+            # Weighted distance: hue is most important (3x), saturation (1.5x), value (1x)
+            hsv_distance = (
+                hue_distance * 3.0 +
+                abs(avg_s - type_s) * 1.5 +
+                abs(avg_v - type_v) * 1.0
+            )
+            
+            # Also calculate RGB distance as a fallback for very desaturated colors
+            rgb_distance = np.sqrt(
+                (avg_r - type_color[0]) ** 2 +
+                (avg_g - type_color[1]) ** 2 +
+                (avg_b - type_color[2]) ** 2
+            )
+            
+            # For very low saturation colors (grays), prefer RGB distance
+            # For colored images, prefer HSV distance
+            if avg_s < 0.1:
+                # Very desaturated (grayish) - use RGB distance
+                distance = rgb_distance
+            else:
+                # Colored image - use HSV distance, but also consider RGB as tiebreaker
+                distance = hsv_distance * 50.0 + rgb_distance * 0.1
         
         if distance < min_distance:
             min_distance = distance
